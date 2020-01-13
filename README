@@ -1,0 +1,22 @@
+Utilities to preprocess and plot SVG/GCode files.
+
+Files
+=====
+
+svg2gcode.py
+------------
+
+
+preprocess.py
+-------------
+Clip GCode coords to the drawable space
+Convert (known) on/off commands to pen down/up
+Optimise draw order
+Append return to 0 and pen up
+
+gcode_stream.py
+---------------
+Streams commands to the plotter
+Instruct user to set initial position
+Finish plot with return to 0 and pen up
+Use in command line mode to send gcode file to plotter.

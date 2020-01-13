@@ -1,0 +1,9 @@
+# venv
+venv
+
+# IDE
+.vscode
+
+# ignore gcode files
+*.gcode
+*.ngc
