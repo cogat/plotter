@@ -5,14 +5,10 @@ Files
 
 svg2gcode.py
 ------------
+Convert SVG to GCode
 
-
-preprocess.py
--------------
-Clip GCode coords to the drawable space
-Convert (known) on/off commands to pen down/up
-Optimise draw order
-Append return to 0 and pen up
+Adapted from https://github.com/davepwsmith/svg2gcode.git to suit plotter rather than
+3D printer.
 
 gcode_stream.py
 ---------------
@@ -20,3 +16,12 @@ Streams commands to the plotter
 Instruct user to set initial position
 Finish plot with return to 0 and pen up
 Use in command line mode to send gcode file to plotter.
+
+TODO:
+=====
+preprocess.py
+-------------
+Clip GCode coords to the drawable space
+Convert (known) on/off commands to pen down/up
+Optimise draw order
+Append return to 0 and pen up

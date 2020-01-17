@@ -6,8 +6,10 @@ Stream g-code to grbl-based controller
 Adapted from stream.py example in GRBL.
 
 TODO:
+Allow async stream
 Clip/ensure coords won't extend beyond plotter
 move pen up/down subs into preprocessor
+Time process from start to finish
 """
 
 import serial
@@ -44,6 +46,7 @@ class GCodeStreamer():
 
         # Wait for grbl to initialize and flush startup text in serial input
         time.sleep(2)
+        self.ser.write(PEN_UP_CMD.encode() + b'\n')
         self.ser.flushInput()
 
     def stream_settings(self):
