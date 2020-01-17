@@ -7,3 +7,7 @@ venv
 # ignore gcode files
 *.gcode
 *.ngc
+*.svg
+
+*.pyc
+*.log

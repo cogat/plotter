@@ -39,3 +39,5 @@ G90 ;absolute positioning
 postamble = f"""{PEN_UP_CMD}
 G00 X00 Y00
 """
+
+DEBUG = False
