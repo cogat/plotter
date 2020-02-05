@@ -18,6 +18,7 @@ import time
 import sys
 import argparse
 import fileinput
+import subprocess
 
 RX_BUFFER_SIZE = 128
 DEFAULT_SERIAL_DEVICE = '/dev/tty.usbserial-14210'
@@ -32,6 +33,11 @@ PEN_DOWN_RES = (
 PEN_UP_RES = (
     r'^G00 Z5.000000',
 )
+
+if 'darwin' in sys.platform:
+    print('Running \'caffeinate\' on MacOSX to prevent the system from sleeping')
+    subprocess.Popen('caffeinate')
+
 
 class GCodeStreamer():
 
@@ -55,7 +61,7 @@ class GCodeStreamer():
         l_count = 0
 
         for line in fileinput.input():
-            l_count += 1  # Iterate line counter    
+            l_count += 1  # Iterate line counter
             l_block = line.strip()  # Strip all EOL characters for consistency
             if self.verbose:
                 print('SND: ' + str(l_count) + ':' + l_block,)
@@ -70,8 +76,8 @@ class GCodeStreamer():
         # Send g-code program via a more agressive streaming protocol that forces characters into
         # Grbl'self.ser serial read buffer to ensure Grbl has immediate access to the next g-code command
         # rather than wait for the call-response serial protocol to finish. This is done by careful
-        # counting of the number of characters sent by the streamer to Grbl and tracking Grbl'self.ser 
-        # responses, such that we never overflow Grbl'self.ser serial read buffer. 
+        # counting of the number of characters sent by the streamer to Grbl and tracking Grbl'self.ser
+        # responses, such that we never overflow Grbl'self.ser serial read buffer.
         l_count = 0
         g_count = 0
         c_line = []
@@ -89,7 +95,7 @@ class GCodeStreamer():
             l_count += 1  # Iterate line counter
             l_block = line.strip()
             c_line.append(len(l_block)+1)  # Track number of characters in grbl serial read buffer
-            grbl_out = b'' 
+            grbl_out = b''
             while sum(c_line) >= RX_BUFFER_SIZE-1 | self.ser.inWaiting():
                 out_temp = self.ser.readline().strip()  # Wait for grbl response
                 if b'ok' not in out_temp and b'error' not in out_temp:
@@ -110,7 +116,7 @@ class GCodeStreamer():
         # Wait for user input after streaming is completed
         print("G-code streaming finished!\n")
         print("WARNING: Wait until grbl completes buffered g-code blocks before exiting.")
-        input("  Press <Enter> to exit and disable grbl.") 
+        input("  Press <Enter> to exit and disable grbl.")
 
         # Close serial port
         self.ser.close()
@@ -119,7 +125,7 @@ class GCodeStreamer():
 def main(gcode_file=None, device=DEFAULT_SERIAL_DEVICE, quiet_mode=False, settings_mode=False, **kwargs):
     streamer = GCodeStreamer(device, quiet_mode)
     print("Ensure plotter is at the zero position.")
-    input("  Press <Enter> to start the plot.") 
+    input("  Press <Enter> to start the plot.")
     if settings_mode:
         streamer.stream_settings()
     else:
@@ -133,9 +139,9 @@ if __name__=='__main__':
             help='g-code filename to be streamed. Use `-` for stdin.', default='-')
     parser.add_argument('-d', '--device',
             help='serial device path', default=DEFAULT_SERIAL_DEVICE)
-    parser.add_argument('-q','--quiet_mode',action='store_true', default=False, 
+    parser.add_argument('-q','--quiet_mode',action='store_true', default=False,
             help='suppress output text')
-    parser.add_argument('-s','--settings-mode',action='store_true', default=False, 
-            help='settings write mode')        
+    parser.add_argument('-s','--settings-mode',action='store_true', default=False,
+            help='settings write mode')
     args = parser.parse_args()
     main(**dict(args._get_kwargs()))

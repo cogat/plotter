@@ -13,6 +13,17 @@ from lib import shapes
 
 SVG_TAGS = set(['rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path'])
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('svg_filename')
+parser.add_argument('--x-size', type=float, help="fit within x mm")
+parser.add_argument('--y-size', type=float, help="fit within y mm")
+parser.add_argument('--centred', action='store_true', help="centre the image on the bed")
+parser.add_argument('--x-offset', type=float, default=0.0, help="move the image right by x mm")
+parser.add_argument('--y-offset', type=float, default=0.0, help="move the image up by y mm")
+
+args = parser.parse_args()
+
 class GCode():
     """
     Wrapper round a file that writes GCode
@@ -36,7 +47,7 @@ class GCode():
         self.file.close()
 
 
-def path_to_gcode(path, mtx, scale):
+def path_to_gcode(path, mtx, scale, offset):
     '''Convert a single svg path to a gcode shape'''
 
     result = ''
@@ -45,11 +56,8 @@ def path_to_gcode(path, mtx, scale):
     x_curr, y_curr = None, None
 
     for x, y in points:  # pylint: disable=invalid-name
-        if x_curr is None:
-            x_curr = scale * x
-            y_curr = scale * y
-        x_curr = scale*x
-        y_curr = scale*y
+        x_curr = scale * x + offset[0]
+        y_curr = scale * y + offset[1]
 
         if 0 <= x_curr <= settings.bed_max_x and \
             0 <= y_curr <= settings.bed_max_y:
@@ -59,13 +67,13 @@ def path_to_gcode(path, mtx, scale):
                 result += f'{settings.PEN_DOWN_CMD}\n'
                 new_shape = False
         else:
-            debug_log(
+            print(
                 f'\t--POINT OUT OF RANGE: ({x_curr}, {y_curr})'
             )
     return result
 
 
-def svg_elem_to_gcode(elem, gcode, scale):
+def svg_elem_to_gcode(elem, gcode, scale, offset):
     '''Transform an SVG element into gcode'''
     debug_log(f'--Found Elem: {elem}')
     tag_suffix = elem.tag.split('}')[-1]
@@ -97,45 +105,58 @@ def svg_elem_to_gcode(elem, gcode, scale):
         mtx = shape_obj.transformation_matrix()
 
         if d_path:
-            gcode.writeln(settings.shape_preamble)
-            gcode.writeln(path_to_gcode(d_path, mtx, scale))
-            gcode.writeln(settings.shape_postamble)
+            if settings.shape_preamble:
+                gcode.writeln(settings.shape_preamble)
+            gcode.writeln(path_to_gcode(d_path, mtx, scale, offset))
+            if settings.shape_postamble:
+                gcode.writeln(settings.shape_postamble)
         else:
             debug_log('\tNO PATH INSTRUCTIONS FOUND!!')
     else:
         debug_log('  --No Name: '+tag_suffix)
 
 
-def get_scale(root):
+def get_scale_offset(root):
     '''Inspect the root SVG element and return the scale factor for the drawing'''
     # Get the Height and Width from the parent svg tag
-    width = root.get('width')
-    height = root.get('height')
-    if width is None or height is None:
+    width = float(root.get('width', '0').rstrip('px'))
+    height = float(root.get('height', '0').rstrip('px'))
+    if not (width and height):
         viewbox = root.get('viewBox')
         if viewbox:
             _, _, width, height = viewbox.split()
 
-    if width is None or height is None:
+    width = float(width)
+    height = float(height)
+
+    if not (width and height):
         raise ValueError('Unable to get width or height for the svg')
 
-    # Scale the file appropriately
-    # (Will never distort image - always scales evenly)
-    # ASSUMES: Y AXIS IS LONG AXIS
-    #          X AXIS IS SHORT AXIS
-    # i.e. laser cutter is in 'portrait'
-    scale_x = settings.bed_max_x / float(width)
-    scale_y = settings.bed_max_y / float(height)
-    scale = min(scale_x, scale_y)
-    if scale > 1:
-        scale = 1
+    x_size = args.x_size or settings.bed_max_x
+    y_size = args.y_size or settings.bed_max_y
 
-    debug_log(f'width: {width}')
-    debug_log(f'height: {height}')
-    debug_log(f'scale: {scale}')
-    debug_log(f'x%: {scale_x}')
-    debug_log(f'y%: {scale_y}')
-    return scale
+    scale_x = x_size / width
+    scale_y = y_size / width
+    scale = min(scale_x, scale_y)
+
+    print(f'svg width: {width}')
+    print(f'svg height: {height}')
+    print(f'output max width: {x_size}mm')
+    print(f'output max height: {y_size}mm')
+    print(f'scale: {scale}')
+
+    if args.centred:
+        offset = (
+            (-width * scale + settings.bed_max_x) / 2,
+            (-height * scale + settings.bed_max_y) / 2
+        )
+    else:
+        offset = (0, 0)
+    offset = (offset[0] + args.x_offset, offset[1] + args.y_offset)
+
+    print(f'offset: {offset[0]}, {offset[1]}mm')
+
+    return scale, offset
 
 def svg_to_gcode(svg_path):
     ''' The main method that converts svg files into gcode files.
@@ -159,14 +180,14 @@ def svg_to_gcode(svg_path):
     root = ET.parse(input_file).getroot()
     input_file.close()
 
-    scale = get_scale(root)
+    scale, offset = get_scale_offset(root)
 
     gcode = GCode(outfile)
-    gcode.writeln(f'G1 F{settings.feed_rate}')
+    gcode.writeln(f'G01 F{settings.feed_rate}')
 
     # Iterate through svg elements
     for elem in root.iter():
-        svg_elem_to_gcode(elem, gcode, scale)
+        svg_elem_to_gcode(elem, gcode, scale, offset)
 
     # Write the Result
     gcode.close()
@@ -179,4 +200,4 @@ def debug_log(message):
         print(message)
 
 if __name__ == '__main__':
-    svg_to_gcode(os.path.abspath(sys.argv[1]))
+    svg_to_gcode(os.path.abspath(args.svg_filename))

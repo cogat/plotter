@@ -1,4 +1,5 @@
 pyserial
+penkit-optimize
 
 # dev
 pylint
