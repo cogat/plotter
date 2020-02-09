@@ -34,24 +34,33 @@ e.g.:
 
 Adapted from penkit-optimize which is installed via pip.
 
-TODO:
-bring across width, height and transformations from the source SVG
-
 svg2gcode.py
 ------------
 Convert SVG to GCode. Scales and centres svg to plotter surface.
 
-TODO:
-some points still appear out of range. Why?
-
-
 Adapted from https://github.com/davepwsmith/svg2gcode.git to suit plotter rather than
 3D printer.
 
-gcode_stream.py
+Archive
+=======
+
+plot_gcode.py
 ---------------
 (I prefer cnc.js now for visuals and pause controls)
 Streams commands to the plotter
 Instruct user to set initial position
 Finish plot with return to 0 and pen up
 Use in command line mode to send gcode file to plotter.
+
+TODO:
+=====
+* svg2gode: specify size, position
+* optimise_svg: bring across width, height and transformations from the source SVG
+* svg2gcode: some points still appear out of range. Why?
+* plot_gcode/cncjs: show bounding box?
+
+Plotter-land
+------------
+* Get more track and belt for whole of A3 x A3 coverage
+* Get M5+M6 tap-and-die for redoing pen hole
+* How to add pen tilt to eleksmaker?
