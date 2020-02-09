@@ -41,22 +41,12 @@ Convert SVG to GCode. Scales and centres svg to plotter surface.
 Adapted from https://github.com/davepwsmith/svg2gcode.git to suit plotter rather than
 3D printer.
 
-Archive
-=======
-
-plot_gcode.py
----------------
-(I prefer cnc.js now for visuals and pause controls)
-Streams commands to the plotter
-Instruct user to set initial position
-Finish plot with return to 0 and pen up
-Use in command line mode to send gcode file to plotter.
-
 TODO:
 =====
-* allow rotate of input
+* print command in gcode comment
 * optimise_svg: bring across width, height and transformations from the source SVG
 * output gcode for right orientation on rotated plotter
+* allow rotate/scale/offset to go off the edge of the plot area 
 
 Plotter-land
 ------------

@@ -1,0 +1,10 @@
+Archive
+=======
+
+plot_gcode.py
+---------------
+(I prefer cnc.js now for visuals and pause controls)
+Streams commands to the plotter
+Instruct user to set initial position
+Finish plot with return to 0 and pen up
+Use in command line mode to send gcode file to plotter.

@@ -10,6 +10,8 @@ import importlib
 from lib import shapes
 import numpy as np
 from vectormath import Vector2
+from utils import Rect, rotate
+from math import pi
 
 SVG_TAGS = set(['rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path'])
 
@@ -19,12 +21,13 @@ parser = argparse.ArgumentParser(description='Take an svg input and convert to g
     'centered in the work area.'
 )
 parser.add_argument('svg_path')
-parser.add_argument('--settings', default='settings', help="use the settings file for a particular machine")ß
+parser.add_argument('--settings', default='settings', help="use the settings file for a particular machine")
 parser.add_argument('--plot-from-origin', action='store_true', help="position the lower left corner of the output at the corner of the work area")
 parser.add_argument('--x-offset-mm', type=float, default=0.0, help="move the output right by x mm")
 parser.add_argument('--y-offset-mm', type=float, default=0.0, help="move the output up by y mm")
-parser.add_argument('--x-size-mm', type=float, help="set the x size of the output in mm (cannot be bigger than the work area)")
-parser.add_argument('--y-size-mm', type=float, help="set the y size of the output in mm (cannot be bigger than the work area)")
+parser.add_argument('--x-size-mm', type=float, help="set the x size of the output in mm")
+parser.add_argument('--y-size-mm', type=float, help="set the y size of the output in mm")
+parser.add_argument('--rotate', type=float, default=0.0, help="Rotate the SVG (about its origin) by this number of degrees")
 
 
 class GCodeFile():
@@ -52,89 +55,6 @@ class GCodeFile():
         self.file.close()
 
 
-class Rect():
-    def __init__(self, corner0, corner1):
-        self.corner0 = corner0
-        self.corner1 = corner1
-
-    @classmethod
-    def far_extents(cls):
-        'Return a Rect with corners at +/- inf for min-max'
-        return cls(
-            Vector2(float('inf'), float('inf')),
-            Vector2(float('-inf'), float('-inf'))
-        )
-
-    def __str__(self):
-        return f'{self.corner0} -> {self.corner1}'
-
-    def __repr__(self):
-        return f'Rect: {self}'
-
-    @property
-    def size(self):
-        'Return a Vector2 from one corner to the other'
-        return Vector2(self.corner1.x - self.corner0.x, self.corner1.y - self.corner0.y)
-
-    def expand_to(self, vec_or_rect):
-        '''
-        Return this rectangle expanded to include the passed vector or rectangle
-        '''
-        if isinstance(vec_or_rect, Rect):
-            return Rect(
-                self.corner0.clip(max=vec_or_rect.corner0),
-                self.corner1.clip(min=vec_or_rect.corner1)
-            )
-        else:
-            return Rect(
-                self.corner0.clip(max=vec_or_rect),
-                self.corner1.clip(min=vec_or_rect)
-            )
-
-    def clip(self, vec0_or_rect, vec1=None):
-        '''
-        Return this rectangle clipped to another rectangle or vector pair.
-        '''
-        if vec1 is not None:
-            return self.clip(Rect(vec0_or_rect, vec1))
-        else:
-            return Rect(
-                self.corner0.clip(min=vec0_or_rect.corner0),
-                self.corner1.clip(max=vec0_or_rect.corner1)
-            )
-
-    def __add__(self, other):
-        return Rect(self.corner0 + other, self.corner1 + other)
-
-    def __sub__(self, other):
-        return Rect(self.corner0 - other, self.corner1 - other)
-
-    def __mul__(self, other):
-        return Rect(self.corner0 * other, self.corner1 * other)
-
-    def __truediv__(self, other):
-        return Rect(self.corner0 / other, self.corner1 / other)
-
-    def __lt__(self, vec):
-        return not self >= vec
-
-    def __le__(self, vec):
-        return not self > vec
-
-    def __gt__(self, vec):
-        '''Called from rect > vec. Return true if vec is strictly inside this rectangle, false otherwise'''
-        return self.corner0.x < vec.x < self.corner1.x and self.corner0.y < vec.y < self.corner1.y
-    
-    def __ge__(self, vec):
-        '''Called from rect >= vec. Return true if the point is inside this rectangle, false otherwise'''
-        return self.corner0.x <= vec.x <= self.corner1.x and self.corner0.y <= vec.y <= self.corner1.y
-
-    @property
-    def ratio(self):
-        size = self.size
-        return 1.0 * size.y / size.x
-
-
 class SVG2GCodeConverter():
     def __init__(
         self,
@@ -146,6 +66,7 @@ class SVG2GCodeConverter():
         y_offset_mm,
         x_size_mm,
         y_size_mm,
+        rotate,
     ):
 
         # Check File Validity
@@ -165,6 +86,8 @@ class SVG2GCodeConverter():
         self.svg_root = ET.parse(input_file).getroot()
         input_file.close()
 
+        self.rotate_rads = rotate * pi / 180
+
         self.svg_bounding_box = self.get_svg_bounding_box()
 
         bed_area_mm = Vector2(self.settings.bed_area_mm)
@@ -172,7 +95,6 @@ class SVG2GCodeConverter():
         self.plot_size_mm = Vector2(x_size_mm or bed_area_mm.x, y_size_mm or bed_area_mm.y)
         self.offset_mm = Vector2(x_offset_mm, y_offset_mm)
         self.plot_from_origin = plot_from_origin
-
 
         self.scale, self.offset = self.get_transform()
 
@@ -184,7 +106,7 @@ class SVG2GCodeConverter():
         points = shapes.point_generator(path, mtx, self.settings.smoothness)
 
         for point in points:
-            plot_point = self.scale * point + self.offset
+            plot_point = self.scale * rotate(Vector2(point), self.rotate_rads) + self.offset
 
             if self.plot_bed_mm >= plot_point: # true if the plot point is within the plot bed
                 result += f'G01 X{plot_point.x} Y{plot_point.y}\n'
@@ -194,6 +116,8 @@ class SVG2GCodeConverter():
                     new_shape = False
             else:
                 print(f'\t--POINT OUT OF RANGE: {plot_point}')
+                import ipdb as pdb; pdb.set_trace()
+                sys.exit(1)
         return result
 
     def svg_elem_to_gcode(self, elem):
@@ -251,7 +175,7 @@ class SVG2GCodeConverter():
         if path:
             points = shapes.point_generator(path, mtx, self.settings.smoothness)
             for point in points:
-                elem_extents = elem_extents.expand_to(Vector2(point))
+                elem_extents = elem_extents.expand_to(rotate(Vector2(point), self.rotate_rads))
 
         return elem_extents
 
