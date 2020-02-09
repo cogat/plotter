@@ -26,8 +26,6 @@ parser.add_argument('--y-offset', type=float, default=0.0, help="move the output
 parser.add_argument('--x-size', type=float, help="set the x size of the output in mm (cannot be bigger than the work area)")
 parser.add_argument('--y-size', type=float, help="set the y size of the output in mm (cannot be bigger than the work area)")
 
-parser.add_argument('--output-bounding-box', action='store_true', help="output a -bb.gcode file which traces the bounding box for the output")
-
 
 class GCodeFile():
     """
@@ -65,7 +63,6 @@ class SVG2GCodeConverter():
         y_offset,
         x_size,
         y_size,
-        output_bounding_box,
     ):
 
         # Check File Validity
@@ -83,7 +80,6 @@ class SVG2GCodeConverter():
         self.y_offset = y_offset
         self.x_size = max(x_size or self.settings.bed_area_mm[0], self.settings.bed_area_mm[0])
         self.y_size = max(y_size or self.settings.bed_area_mm[1], self.settings.bed_area_mm[1])
-        self.output_bounding_box = output_bounding_box
 
         self.scale = None
         self.offset = None
@@ -100,9 +96,14 @@ class SVG2GCodeConverter():
             x_curr = self.scale * x + self.offset[0]
             y_curr = self.scale * y + self.offset[1]
 
+            # reflect y about the output centre (y_size / 2 + y_offset)
+            reflection_line = self.y_size / 2.0 # TODO: incorporate y_offset...
+            y_dist = reflection_line - y_curr
+            y_curr += 2 * y_dist
+
             if 0 <= x_curr <= self.settings.bed_area_mm[0] and \
                 0 <= y_curr <= self.settings.bed_area_mm[1]:
-                result += f'G00 X{x_curr} Y{y_curr}\n'
+                result += f'G01 X{x_curr} Y{y_curr}\n'
                 if new_shape:
                     # move to position, put the pen down
                     result += f'{self.settings.TOOL_ON_CMD}\n'
