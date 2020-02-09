@@ -23,8 +23,8 @@ parser.add_argument('--position-at-origin', action='store_true', help="position 
 parser.add_argument('--x-offset', type=float, default=0.0, help="move the output right by x mm")
 parser.add_argument('--y-offset', type=float, default=0.0, help="move the output up by y mm")
 
-parser.add_argument('--x-size', type=float, default=0.0, help="set the x size of the output in mm")
-parser.add_argument('--y-size', type=float, default=0.0, help="set the y size of the output in mm")
+parser.add_argument('--x-size', type=float, help="set the x size of the output in mm (cannot be bigger than the work area)")
+parser.add_argument('--y-size', type=float, help="set the y size of the output in mm (cannot be bigger than the work area)")
 
 parser.add_argument('--output-bounding-box', action='store_true', help="output a -bb.gcode file which traces the bounding box for the output")
 
@@ -81,8 +81,8 @@ class SVG2GCodeConverter():
         self.position_at_origin = position_at_origin
         self.x_offset = x_offset
         self.y_offset = y_offset
-        self.x_size = x_size
-        self.y_size = y_size
+        self.x_size = max(x_size or self.settings.work_area_mm[0], self.settings.work_area_mm[0])
+        self.y_size = max(y_size or self.settings.work_area_mm[1], self.settings.work_area_mm[1])
         self.output_bounding_box = output_bounding_box
 
         self.scale = None
@@ -158,35 +158,32 @@ class SVG2GCodeConverter():
     def _get_scale_offset(self, root):
         '''Inspect the root SVG element and return the scale factor for the drawing'''
         # Get the Height and Width from the parent svg tag
-        width = float(root.get('width', '0').rstrip('px'))
-        height = float(root.get('height', '0').rstrip('px'))
-        if not (width and height):
+        work_width = float(root.get('width', '0').rstrip('px'))
+        work_height = float(root.get('height', '0').rstrip('px'))
+        if not (work_width and work_height):
             viewbox = root.get('viewBox')
             if viewbox:
-                _, _, width, height = viewbox.split()
+                _, _, work_width, work_height = viewbox.split()
 
-        width = float(width)
-        height = float(height)
+        work_width = float(work_width)
+        work_height = float(work_height)
 
-        if not (width and height):
+        if not (work_width and work_height):
             raise ValueError('Unable to get width or height for the svg')
 
-        x_size = self.x_size or self.settings.work_area_mm[0]
-        y_size = self.y_size or self.settings.work_area_mm[1]
-
-        scale_x = x_size / width
-        scale_y = y_size / width
+        scale_x = self.x_size / work_width
+        scale_y = self.y_size / work_height
         scale = min(scale_x, scale_y)
 
-        print(f'svg dimensions: {width:.2f} x {height:.2f}')
-        print(f'output dimensions: {x_size:.2f} x {y_size:.2f} mm (scale {scale:.2f})')
+        print(f'svg dimensions: {work_width:.2f} x {work_height:.2f}')
+        print(f'output dimensions: {self.x_size:.2f} x {self.y_size:.2f} mm (scale {scale:.2f})')
 
         if self.position_at_origin:
             offset = (0, 0)
         else:
             offset = (
-                (-width * scale + self.settings.work_area_mm[0]) / 2,
-                (-height * scale + self.settings.work_area_mm[1]) / 2
+                (-work_width * scale + self.settings.work_area_mm[0]) / 2,
+                (-work_height * scale + self.settings.work_area_mm[1]) / 2
             )
         offset = (offset[0] + self.x_offset, offset[1] + self.y_offset)
 
