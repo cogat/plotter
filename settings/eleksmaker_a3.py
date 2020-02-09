@@ -1,7 +1,7 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Configuration file for SVG to GCODE converter
-# For printing single layers with adhesive
+import os
+
+_settings_file = os.path.basename(__file__)
+settings_name = f'Eleksmaker A3 ({_settings_file})'
 
 # A4 area:               210mm x 297mm
 # Printer Cutting Area: ~178mm x ~344mm
@@ -26,7 +26,7 @@ shape_preamble = TOOL_OFF_CMD
 shape_postamble = ""
 
 # G-code prepended at the start of processing the SVG file
-preamble = """; For EleksMaker A3 Plotter
+preamble = f"""; Settings: {settings_name}
 G21 ;metric values
 G90 ;absolute positioning
 """

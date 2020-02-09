@@ -38,6 +38,7 @@ class GCodeFile():
         '''Open the file and write the preamble'''
         self.settings = settings
         self.file = open(filename, 'w')
+        self.writeln(f'; Generated with `{" ".join(sys.argv)}`')
         self.writeln(self.settings.preamble)
         self.writeln(f'G01 F{self.settings.feed_rate}')
 
