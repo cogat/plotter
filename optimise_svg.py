@@ -46,8 +46,6 @@ def run_optimizer(input_file, output_file, vis_output, noopt, merge_paths):
 
     print('Writing results to {}'.format(output_file))
 
-    import pdb; pdb.set_trace()
-
     svg_attributes["debug"] = False
 
     wsvg(

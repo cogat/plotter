@@ -54,11 +54,9 @@ Use in command line mode to send gcode file to plotter.
 
 TODO:
 =====
-* convert svg2gcode to use vector/matrix transforms
-* incorporate y mirror in transform, so it works with offset
-* output gcode for right orientation on rotated plotter
+* allow rotate of input
 * optimise_svg: bring across width, height and transformations from the source SVG
-* plot_gcode/cncjs: show bounding box?
+* output gcode for right orientation on rotated plotter
 
 Plotter-land
 ------------

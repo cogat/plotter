@@ -5,3 +5,4 @@ penkit-optimize
 pylint
 ipdb
 ipython
+vectormath

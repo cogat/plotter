@@ -8,6 +8,8 @@ import sys
 import xml.etree.ElementTree as ET
 import importlib
 from lib import shapes
+import numpy as np
+from vectormath import Vector2
 
 SVG_TAGS = set(['rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path'])
 
@@ -17,14 +19,12 @@ parser = argparse.ArgumentParser(description='Take an svg input and convert to g
     'centered in the work area.'
 )
 parser.add_argument('svg_path')
-parser.add_argument('--settings', default='settings', help="use the settings for a particular machine")
-
-parser.add_argument('--position-at-origin', action='store_true', help="position the lower left corner of the output at the corner of the work area")
-parser.add_argument('--x-offset', type=float, default=0.0, help="move the output right by x mm")
-parser.add_argument('--y-offset', type=float, default=0.0, help="move the output up by y mm")
-
-parser.add_argument('--x-size', type=float, help="set the x size of the output in mm (cannot be bigger than the work area)")
-parser.add_argument('--y-size', type=float, help="set the y size of the output in mm (cannot be bigger than the work area)")
+parser.add_argument('--settings', default='settings', help="use the settings file for a particular machine")ß
+parser.add_argument('--plot-from-origin', action='store_true', help="position the lower left corner of the output at the corner of the work area")
+parser.add_argument('--x-offset-mm', type=float, default=0.0, help="move the output right by x mm")
+parser.add_argument('--y-offset-mm', type=float, default=0.0, help="move the output up by y mm")
+parser.add_argument('--x-size-mm', type=float, help="set the x size of the output in mm (cannot be bigger than the work area)")
+parser.add_argument('--y-size-mm', type=float, help="set the y size of the output in mm (cannot be bigger than the work area)")
 
 
 class GCodeFile():
@@ -52,17 +52,100 @@ class GCodeFile():
         self.file.close()
 
 
+class Rect():
+    def __init__(self, corner0, corner1):
+        self.corner0 = corner0
+        self.corner1 = corner1
+
+    @classmethod
+    def far_extents(cls):
+        'Return a Rect with corners at +/- inf for min-max'
+        return cls(
+            Vector2(float('inf'), float('inf')),
+            Vector2(float('-inf'), float('-inf'))
+        )
+
+    def __str__(self):
+        return f'{self.corner0} -> {self.corner1}'
+
+    def __repr__(self):
+        return f'Rect: {self}'
+
+    @property
+    def size(self):
+        'Return a Vector2 from one corner to the other'
+        return Vector2(self.corner1.x - self.corner0.x, self.corner1.y - self.corner0.y)
+
+    def expand_to(self, vec_or_rect):
+        '''
+        Return this rectangle expanded to include the passed vector or rectangle
+        '''
+        if isinstance(vec_or_rect, Rect):
+            return Rect(
+                self.corner0.clip(max=vec_or_rect.corner0),
+                self.corner1.clip(min=vec_or_rect.corner1)
+            )
+        else:
+            return Rect(
+                self.corner0.clip(max=vec_or_rect),
+                self.corner1.clip(min=vec_or_rect)
+            )
+
+    def clip(self, vec0_or_rect, vec1=None):
+        '''
+        Return this rectangle clipped to another rectangle or vector pair.
+        '''
+        if vec1 is not None:
+            return self.clip(Rect(vec0_or_rect, vec1))
+        else:
+            return Rect(
+                self.corner0.clip(min=vec0_or_rect.corner0),
+                self.corner1.clip(max=vec0_or_rect.corner1)
+            )
+
+    def __add__(self, other):
+        return Rect(self.corner0 + other, self.corner1 + other)
+
+    def __sub__(self, other):
+        return Rect(self.corner0 - other, self.corner1 - other)
+
+    def __mul__(self, other):
+        return Rect(self.corner0 * other, self.corner1 * other)
+
+    def __truediv__(self, other):
+        return Rect(self.corner0 / other, self.corner1 / other)
+
+    def __lt__(self, vec):
+        return not self >= vec
+
+    def __le__(self, vec):
+        return not self > vec
+
+    def __gt__(self, vec):
+        '''Called from rect > vec. Return true if vec is strictly inside this rectangle, false otherwise'''
+        return self.corner0.x < vec.x < self.corner1.x and self.corner0.y < vec.y < self.corner1.y
+    
+    def __ge__(self, vec):
+        '''Called from rect >= vec. Return true if the point is inside this rectangle, false otherwise'''
+        return self.corner0.x <= vec.x <= self.corner1.x and self.corner0.y <= vec.y <= self.corner1.y
+
+    @property
+    def ratio(self):
+        size = self.size
+        return 1.0 * size.y / size.x
+
+
 class SVG2GCodeConverter():
     def __init__(
         self,
         settings,
         svg_path,
         gcode_path,
-        position_at_origin,
-        x_offset,
-        y_offset,
-        x_size,
-        y_size,
+        plot_from_origin,
+        x_offset_mm,
+        y_offset_mm,
+        x_size_mm,
+        y_size_mm,
     ):
 
         # Check File Validity
@@ -75,14 +158,23 @@ class SVG2GCodeConverter():
         self.settings = settings
         self.svg_path = svg_path
         self.gcode_path = gcode_path
-        self.position_at_origin = position_at_origin
-        self.x_offset = x_offset
-        self.y_offset = y_offset
-        self.x_size = max(x_size or self.settings.bed_area_mm[0], self.settings.bed_area_mm[0])
-        self.y_size = max(y_size or self.settings.bed_area_mm[1], self.settings.bed_area_mm[1])
+        self.gcode_file = GCodeFile(self.gcode_path, self.settings)
 
-        self.scale = None
-        self.offset = None
+        # Get the svg Input File
+        input_file = open(self.svg_path, 'r')
+        self.svg_root = ET.parse(input_file).getroot()
+        input_file.close()
+
+        self.svg_bounding_box = self.get_svg_bounding_box()
+
+        bed_area_mm = Vector2(self.settings.bed_area_mm)
+        self.plot_bed_mm = Rect(Vector2(), bed_area_mm)
+        self.plot_size_mm = Vector2(x_size_mm or bed_area_mm.x, y_size_mm or bed_area_mm.y)
+        self.offset_mm = Vector2(x_offset_mm, y_offset_mm)
+        self.plot_from_origin = plot_from_origin
+
+
+        self.scale, self.offset = self.get_transform()
 
     def path_to_gcode(self, path, mtx):
         '''Convert a single svg path to a gcode shape'''
@@ -90,27 +182,18 @@ class SVG2GCodeConverter():
         result = ''
         new_shape = True
         points = shapes.point_generator(path, mtx, self.settings.smoothness)
-        x_curr, y_curr = None, None
 
-        for x, y in points:  # pylint: disable=invalid-name
-            x_curr = self.scale * x + self.offset[0]
-            y_curr = self.scale * y + self.offset[1]
+        for point in points:
+            plot_point = self.scale * point + self.offset
 
-            # reflect y about the output centre (y_size / 2 + y_offset)
-            reflection_line = self.y_size / 2.0 # TODO: incorporate y_offset...
-            y_dist = reflection_line - y_curr
-            y_curr += 2 * y_dist
-
-            if 0 <= x_curr <= self.settings.bed_area_mm[0] and \
-                0 <= y_curr <= self.settings.bed_area_mm[1]:
-                result += f'G01 X{x_curr} Y{y_curr}\n'
+            if self.plot_bed_mm >= plot_point: # true if the plot point is within the plot bed
+                result += f'G01 X{plot_point.x} Y{plot_point.y}\n'
                 if new_shape:
                     # move to position, put the pen down
                     result += f'{self.settings.TOOL_ON_CMD}\n'
                     new_shape = False
             else:
-                print(f'\t--POINT OUT OF RANGE: ({x_curr}, {y_curr})')
-                # sys.exit(1)
+                print(f'\t--POINT OUT OF RANGE: {plot_point}')
         return result
 
     def svg_elem_to_gcode(self, elem):
@@ -155,13 +238,11 @@ class SVG2GCodeConverter():
         else:
             self.debug_log('\tNO PATH INSTRUCTIONS FOUND!!')            
 
-    def _get_minmax(self, elem):
-        elem_min = (float('inf'), float('inf'))
-        elem_max = (float('-inf'), float('-inf'))
-
+    def _get_elem_extents(self, elem):
+        elem_extents = Rect.far_extents()
         tag_suffix = elem.tag.split('}')[-1]
         if tag_suffix not in SVG_TAGS:
-            return elem_min, elem_max
+            return elem_extents
 
         shape_class = getattr(shapes, tag_suffix)
         shape_obj = shape_class(elem)
@@ -170,67 +251,68 @@ class SVG2GCodeConverter():
         if path:
             points = shapes.point_generator(path, mtx, self.settings.smoothness)
             for point in points:
-                elem_min = (min(elem_min[0], point[0]), min(elem_min[1], point[1]))
-                elem_max = (max(elem_max[0], point[0]), max(elem_max[1], point[1]))
+                elem_extents = elem_extents.expand_to(Vector2(point))
 
-        return elem_min, elem_max
-            
+        return elem_extents
 
-    def _get_scale_offset(self, root):
-        '''Inspect the SVG and return the scale factor and offset for the drawing.
-        To apply, take SVG, multply svg coord by scale factor, then add the offset.
+    def get_svg_bounding_box(self):
         '''
+        Return a Rect describing the bounding box of coords in the SVG file. 
+        [TODO: is this already a function in the SVG lib?]
+        '''
+        svg_bounding_box = Rect.far_extents()
+        for elem in self.svg_root.iter():
+            elem_extents = self._get_elem_extents(elem)
+            svg_bounding_box = svg_bounding_box.expand_to(elem_extents)
 
-        in_min = (float('inf'), float('inf'))
-        in_max = (float('-inf'), float('-inf'))
+        print(f'SVG extents: {svg_bounding_box}')
+        return svg_bounding_box
 
-        for elem in root.iter():
-            elem_min, elem_max = self._get_minmax(elem)
-            in_min = (min(elem_min[0], in_min[0]), min(elem_min[1], in_min[1]))
-            in_max = (max(elem_max[0], in_max[0]), max(elem_max[1], in_max[1]))
+    def get_transform(self):
+        '''
+        Map the SVG bounding box onto the plot area.
+        '''
+        # Shrink either x_size or y_size to match aspect ratio of SVG        
+        svg_ratio = self.svg_bounding_box.ratio
+        plot_ratio = 1.0 * self.plot_size_mm.y / self.plot_size_mm.x
 
-        print(f'input (svg) extents: {in_min[0]:.2f}, {in_min[1]:.2f} -> {in_max[0]:.2f}, {in_max[1]:.2f}')
+        if svg_ratio > plot_ratio:
+            # svg is taller than plot - shrink the x
+            self.plot_size_mm.x = self.plot_size_mm.y / svg_ratio
+        else:
+            # svg is wider than plot - shrink the y
+            self.plot_size_mm.y = self.plot_size_mm.x * svg_ratio
 
-        work_size = in_max[0] - in_min[0], in_max[1] - in_min[1], 
+        if self.plot_from_origin:
+            # output extents are (0, 0 -> x_size, y_size) + offset, if plot_from_origin
+            self.plot_extents = Rect(self.offset_mm, self.offset_mm + self.plot_size_mm)
+        else:
+            # output extents are (bed_centre +/- size / 2) + offset, if plot_from_centre
+            self.plot_extents = Rect((self.plot_bed_mm.size - self.plot_size_mm), (self.plot_bed_mm.size + self.plot_size_mm)) / 2.0 + self.offset_mm
+        # output extents are clipped to bed_size
+        self.plot_extents = self.plot_extents.clip(self.plot_bed_mm)
 
-        scale_x = 1.0 * self.x_size / work_size[0]
-        scale_y = 1.0 * self.y_size / work_size[1]
-        scale = min(scale_x, scale_y)
+        print(f'Plot extents: {self.plot_extents}')
 
-        # set offset to user offset
-        offset = [
-            self.x_offset - in_min[0] * scale, 
-            self.y_offset - in_min[1] * scale
-        ]
+        # Transform SVG bounding box to plot extents
 
-        if not self.position_at_origin:
-            # centre in work area
-            offset[0] += (self.settings.bed_area_mm[0] - scale * work_size[0]) / 2.0
-            offset[1] += (self.settings.bed_area_mm[1] - scale * work_size[1]) / 2.0
+        # flip the SVG y values, since the coordinate systems are different
+        temp = self.svg_bounding_box.corner0.y
+        self.svg_bounding_box.corner0.y = self.svg_bounding_box.corner1.y
+        self.svg_bounding_box.corner1.y = temp
 
-        print(f'output (plot area) extents: {in_min[0] * scale + offset[0]:.2f} x {in_min[1] * scale + offset[1]:.2f}mm -> {in_max[0] * scale + offset[0]:.2f} x {in_max[1] * scale + offset[1]:.2f}mm')
+        scale = self.plot_extents.size / self.svg_bounding_box.size
+        offset = self.plot_extents.corner0 - scale * self.svg_bounding_box.corner0
 
-        print(f'scale: {scale:.4f}; offset: {offset[0]:.2f} x {offset[1]:.2f}mm')
+        print(f'scale: {scale}; offset: {offset}')
 
-        return scale, tuple(offset)
+        return scale, offset
 
     def convert(self):
-        ''' The main method that converts svg files into gcode files.
-            Still incomplete. See tests/start.svg'''
-
-        # Get the svg Input File
-        input_file = open(self.svg_path, 'r')
-        root = ET.parse(input_file).getroot()
-        input_file.close()
-
-        self.scale, self.offset = self._get_scale_offset(root)
-        self.gcode_file = GCodeFile(self.gcode_path, self.settings)
-
+        ''' The main method that converts svg files into gcode files.'''
         # Iterate through svg elements
-        for elem in root.iter():
+        for elem in self.svg_root.iter():
             self.svg_elem_to_gcode(elem)
-
-        # Write the Result
         self.gcode_file.close()
 
     def debug_log(self, message):
