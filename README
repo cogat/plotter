@@ -54,13 +54,13 @@ Use in command line mode to send gcode file to plotter.
 
 TODO:
 =====
-* svg2gode: specify size, position
+* un-mirror gcode
 * optimise_svg: bring across width, height and transformations from the source SVG
-* svg2gcode: some points still appear out of range. Why?
 * plot_gcode/cncjs: show bounding box?
 
 Plotter-land
 ------------
+* how to centre plot area on page?
 * Get more track and belt for whole of A3 x A3 coverage
 * Get M5+M6 tap-and-die for redoing pen hole
 * How to add pen tilt to eleksmaker?

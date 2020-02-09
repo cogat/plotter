@@ -7,7 +7,7 @@
 # Printer Cutting Area: ~178mm x ~344mm
 # Testing Area:          150mm x 150mm  (for now)
 # Print bed width in mm
-work_area_mm = (389, 274)
+bed_area_mm = (389, 274)
 
 # Feed Rate
 feed_rate = 5000.00

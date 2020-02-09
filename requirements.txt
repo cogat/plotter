@@ -3,4 +3,5 @@ penkit-optimize
 
 # dev
 pylint
+ipdb
 ipython
